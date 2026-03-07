@@ -9,8 +9,10 @@ def collect_system_stats() -> SystemStats:
     load_raw = psutil.getloadavg() if hasattr(psutil, "getloadavg") else (0.0, 0.0, 0.0)
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
+    cpu_percents = psutil.cpu_percent(interval=0.2, percpu=True)
     return SystemStats(
-        cpu_percent=psutil.cpu_percent(interval=0.2),
+        cpu_percent=round(sum(cpu_percents) / len(cpu_percents), 1) if cpu_percents else 0.0,
+        cpu_percents=[round(value, 1) for value in cpu_percents],
         memory_percent=memory.percent,
         memory_used_bytes=memory.used,
         memory_total_bytes=memory.total,

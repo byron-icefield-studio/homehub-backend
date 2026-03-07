@@ -80,6 +80,28 @@ def save_services(config: ServicesConfig) -> ServicesConfig:
 
 def get_dashboard() -> DashboardConfig:
     raw = _read_or_init(DASHBOARD_PATH, DEFAULT_DASHBOARD.model_dump())
+    docker_urls = raw.get("docker_urls", {})
+    if isinstance(docker_urls, dict):
+        migrated = {}
+        changed = False
+        for key, value in docker_urls.items():
+            if isinstance(value, str):
+                migrated[key] = {
+                    "name": "",
+                    "intranet_url": value,
+                    "extranet_url": "",
+                }
+                changed = True
+            elif isinstance(value, dict):
+                migrated[key] = {
+                    "name": str(value.get("name", "")),
+                    "intranet_url": str(value.get("intranet_url", "")),
+                    "extranet_url": str(value.get("extranet_url", "")),
+                }
+            else:
+                changed = True
+        if changed:
+            raw["docker_urls"] = migrated
     return DashboardConfig.model_validate(raw)
 
 

@@ -30,11 +30,12 @@ class DashboardConfig(BaseModel):
     title: str = "HomeHub Dashboard"
     subtitle: str = "HomeHub 家庭服务中心"
     theme: str = "light"
-    docker_urls: dict[str, str] = Field(default_factory=dict)
+    docker_urls: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class SystemStats(BaseModel):
     cpu_percent: float
+    cpu_percents: list[float]
     memory_percent: float
     memory_used_bytes: int
     memory_total_bytes: int
