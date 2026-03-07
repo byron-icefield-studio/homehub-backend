@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import io
-import json
+import re
 import tarfile
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
+from urllib.request import Request, urlopen
 
 import docker
 from fastapi import FastAPI, HTTPException
@@ -26,6 +28,47 @@ app.add_middleware(
 
 def _docker_client() -> docker.DockerClient:
     return docker.from_env()
+
+
+def _discover_icons(target_url: str) -> list[str]:
+    parsed = urlparse(target_url)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=400, detail="url must start with http:// or https://")
+
+    request = Request(
+        target_url,
+        headers={
+            "User-Agent": "HomeHub/0.1 (+icon-discovery)",
+        },
+    )
+    with urlopen(request, timeout=6) as response:
+        html = response.read(200_000).decode("utf-8", errors="ignore")
+        base_url = response.geturl()
+
+    candidates = []
+    pattern = re.compile(
+        r"""<link[^>]+rel=["'][^"']*(?:icon|apple-touch-icon)[^"']*["'][^>]+href=["']([^"']+)["']""",
+        re.IGNORECASE,
+    )
+    for href in pattern.findall(html):
+        candidates.append(urljoin(base_url, href))
+
+    root = f"{parsed.scheme}://{parsed.netloc}"
+    candidates.extend(
+        [
+            urljoin(base_url, "/favicon.ico"),
+            urljoin(base_url, "/apple-touch-icon.png"),
+            urljoin(root, "/favicon.ico"),
+        ]
+    )
+
+    seen: set[str] = set()
+    deduped = []
+    for item in candidates:
+        if item and item not in seen:
+            seen.add(item)
+            deduped.append(item)
+    return deduped[:8]
 
 
 @app.get("/healthz")
@@ -87,6 +130,16 @@ def container_logs(name: str, tail: int = 200) -> dict:
         return {"name": name, "tail": tail, "logs": logs}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=404, detail=f"container not found or logs unavailable: {exc}") from exc
+
+
+@app.get("/api/icons/suggestions")
+def icon_suggestions(url: str) -> dict:
+    try:
+        return {"icons": _discover_icons(url)}
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"icon discovery failed: {exc}") from exc
 
 
 @app.get("/api/config/export")

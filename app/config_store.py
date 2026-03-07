@@ -20,16 +20,7 @@ DEFAULT_SERVICES = ServicesConfig(
         {
             "id": "default",
             "name": "默认分组",
-            "services": [
-                {
-                    "id": "router",
-                    "name": "路由器",
-                    "intranet_url": "http://192.168.1.1",
-                    "extranet_url": "",
-                    "open_mode": "auto",
-                    "tags": ["network"],
-                }
-            ],
+            "services": [],
         }
     ]
 )
@@ -90,6 +81,7 @@ def get_dashboard() -> DashboardConfig:
                     "name": "",
                     "intranet_url": value,
                     "extranet_url": "",
+                    "icon": "",
                 }
                 changed = True
             elif isinstance(value, dict):
@@ -97,6 +89,7 @@ def get_dashboard() -> DashboardConfig:
                     "name": str(value.get("name", "")),
                     "intranet_url": str(value.get("intranet_url", "")),
                     "extranet_url": str(value.get("extranet_url", "")),
+                    "icon": str(value.get("icon", "")),
                 }
             else:
                 changed = True

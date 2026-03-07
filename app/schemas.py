@@ -31,6 +31,7 @@ class DashboardConfig(BaseModel):
     subtitle: str = "HomeHub 家庭服务中心"
     theme: str = "light"
     docker_urls: dict[str, dict[str, str]] = Field(default_factory=dict)
+    nav_order: list[str] = Field(default_factory=list)
 
 
 class SystemStats(BaseModel):
