@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .config_store import CONFIG_DIR, get_dashboard, get_services, save_dashboard, save_services
-from .schemas import ContainerInfo, DashboardConfig, ServicesConfig
+from .schemas import ContainerInfo, ContainerStats, DashboardConfig, ServicesConfig
 from .system_info import collect_system_stats
 
 app = FastAPI(title="HomeHub Service API", version="0.1.0")
@@ -138,7 +138,6 @@ def list_containers() -> list[ContainerInfo]:
         client = _docker_client()
         items = []
         for c in client.containers.list(all=True):
-            stats = _container_stats(c)
             items.append(
                 ContainerInfo(
                     id=c.short_id,
@@ -146,6 +145,23 @@ def list_containers() -> list[ContainerInfo]:
                     image=(c.image.tags[0] if c.image.tags else "<none>"),
                     status=c.status,
                     state=c.attrs.get("State", {}).get("Status", c.status),
+                )
+            )
+        return items
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"docker query failed: {exc}") from exc
+
+
+@app.get("/api/docker/containers/stats", response_model=list[ContainerStats])
+def list_container_stats() -> list[ContainerStats]:
+    try:
+        client = _docker_client()
+        items = []
+        for c in client.containers.list(all=True):
+            stats = _container_stats(c)
+            items.append(
+                ContainerStats(
+                    name=(c.name or "").lstrip("/"),
                     cpu_percent=stats["cpu_percent"],
                     memory_usage_bytes=stats["memory_usage_bytes"],
                     memory_limit_bytes=stats["memory_limit_bytes"],
@@ -154,7 +170,7 @@ def list_containers() -> list[ContainerInfo]:
             )
         return items
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"docker query failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"docker stats query failed: {exc}") from exc
 
 
 @app.get("/api/docker/containers/{name}/logs")

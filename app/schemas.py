@@ -51,6 +51,10 @@ class ContainerInfo(BaseModel):
     image: str
     status: str
     state: str
+
+
+class ContainerStats(BaseModel):
+    name: str
     cpu_percent: float = 0
     memory_usage_bytes: int = 0
     memory_limit_bytes: int = 0
