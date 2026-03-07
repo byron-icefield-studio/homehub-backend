@@ -19,7 +19,7 @@ HomeHub 后端项目（FastAPI），负责：
 
 ## Data Persistence
 
-默认持久化目录：
+默认配置路径（容器内）：
 
 - `/data/config/services.json`
 - `/data/config/dashboard.json`
@@ -73,7 +73,7 @@ docker build -t homehub-backend .
 docker run -d \
   --name homehub-backend \
   -e DATA_ROOT=/data \
-  -v /path/to/data:/data \
+  -v <host_data_dir>:/data \
   --restart unless-stopped \
   homehub-backend
 ```
