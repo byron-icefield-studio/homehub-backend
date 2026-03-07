@@ -21,4 +21,4 @@ htmlcov/
 
 .DS_Store
 *.log
-.history
+.history/
