@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import re
 import tarfile
+import threading
+import time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
@@ -17,6 +19,11 @@ from .schemas import ContainerInfo, ContainerStats, DashboardConfig, ServicesCon
 from .system_info import collect_system_stats
 
 app = FastAPI(title="HomeHub Service API", version="0.1.0")
+
+_stats_lock = threading.Lock()
+_stats_stop = threading.Event()
+_stats_cache: dict[str, ContainerStats] = {}
+_STATS_REFRESH_SECONDS = 3.0
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,6 +66,47 @@ def _container_stats(container: docker.models.containers.Container) -> dict[str,
         "memory_limit_bytes": limit,
         "memory_percent": memory_percent,
     }
+
+
+def _refresh_container_stats_cache() -> None:
+    while not _stats_stop.is_set():
+        next_cache: dict[str, ContainerStats] = {}
+        try:
+            client = _docker_client()
+            for c in client.containers.list(all=True):
+                name = (c.name or "").lstrip("/")
+                if c.status != "running":
+                    next_cache[name] = ContainerStats(name=name)
+                    continue
+                stats = _container_stats(c)
+                next_cache[name] = ContainerStats(
+                    name=name,
+                    cpu_percent=stats["cpu_percent"],
+                    memory_usage_bytes=stats["memory_usage_bytes"],
+                    memory_limit_bytes=stats["memory_limit_bytes"],
+                    memory_percent=stats["memory_percent"],
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+        with _stats_lock:
+            _stats_cache.clear()
+            _stats_cache.update(next_cache)
+
+        _stats_stop.wait(_STATS_REFRESH_SECONDS)
+
+
+@app.on_event("startup")
+def startup_event() -> None:
+    _stats_stop.clear()
+    worker = threading.Thread(target=_refresh_container_stats_cache, name="docker-stats-cache", daemon=True)
+    worker.start()
+    app.state.docker_stats_worker = worker
+
+
+@app.on_event("shutdown")
+def shutdown_event() -> None:
+    _stats_stop.set()
 
 
 def _discover_icons(target_url: str) -> list[str]:
@@ -154,23 +202,8 @@ def list_containers() -> list[ContainerInfo]:
 
 @app.get("/api/docker/containers/stats", response_model=list[ContainerStats])
 def list_container_stats() -> list[ContainerStats]:
-    try:
-        client = _docker_client()
-        items = []
-        for c in client.containers.list(all=True):
-            stats = _container_stats(c)
-            items.append(
-                ContainerStats(
-                    name=(c.name or "").lstrip("/"),
-                    cpu_percent=stats["cpu_percent"],
-                    memory_usage_bytes=stats["memory_usage_bytes"],
-                    memory_limit_bytes=stats["memory_limit_bytes"],
-                    memory_percent=stats["memory_percent"],
-                )
-            )
-        return items
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"docker stats query failed: {exc}") from exc
+    with _stats_lock:
+        return list(_stats_cache.values())
 
 
 @app.get("/api/docker/containers/{name}/logs")
