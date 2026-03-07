@@ -10,7 +10,6 @@ class ServiceItem(BaseModel):
     intranet_url: str
     extranet_url: str | None = None
     open_mode: str = Field(default="auto", pattern="^(auto|internal|external)$")
-    tags: list[str] = Field(default_factory=list)
 
 
 class ServiceGroup(BaseModel):
@@ -52,3 +51,7 @@ class ContainerInfo(BaseModel):
     image: str
     status: str
     state: str
+    cpu_percent: float = 0
+    memory_usage_bytes: int = 0
+    memory_limit_bytes: int = 0
+    memory_percent: float = 0

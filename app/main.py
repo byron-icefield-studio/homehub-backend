@@ -30,6 +30,37 @@ def _docker_client() -> docker.DockerClient:
     return docker.from_env()
 
 
+def _container_stats(container: docker.models.containers.Container) -> dict[str, float | int]:
+    stats = container.stats(stream=False)
+    cpu_stats = stats.get("cpu_stats", {})
+    precpu_stats = stats.get("precpu_stats", {})
+    cpu_total = cpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+    precpu_total = precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+    system_total = cpu_stats.get("system_cpu_usage", 0)
+    presystem_total = precpu_stats.get("system_cpu_usage", 0)
+    online_cpus = cpu_stats.get("online_cpus") or len(cpu_stats.get("cpu_usage", {}).get("percpu_usage") or []) or 1
+
+    cpu_percent = 0.0
+    cpu_delta = cpu_total - precpu_total
+    system_delta = system_total - presystem_total
+    if cpu_delta > 0 and system_delta > 0:
+        cpu_percent = round((cpu_delta / system_delta) * online_cpus * 100, 1)
+
+    memory = stats.get("memory_stats", {})
+    usage = int(memory.get("usage") or 0)
+    cache = int((memory.get("stats") or {}).get("cache") or 0)
+    limit = int(memory.get("limit") or 0)
+    working_set = max(usage - cache, 0)
+    memory_percent = round((working_set / limit) * 100, 1) if limit > 0 else 0.0
+
+    return {
+        "cpu_percent": cpu_percent,
+        "memory_usage_bytes": working_set,
+        "memory_limit_bytes": limit,
+        "memory_percent": memory_percent,
+    }
+
+
 def _discover_icons(target_url: str) -> list[str]:
     parsed = urlparse(target_url)
     if parsed.scheme not in {"http", "https"}:
@@ -107,6 +138,7 @@ def list_containers() -> list[ContainerInfo]:
         client = _docker_client()
         items = []
         for c in client.containers.list(all=True):
+            stats = _container_stats(c)
             items.append(
                 ContainerInfo(
                     id=c.short_id,
@@ -114,6 +146,10 @@ def list_containers() -> list[ContainerInfo]:
                     image=(c.image.tags[0] if c.image.tags else "<none>"),
                     status=c.status,
                     state=c.attrs.get("State", {}).get("Status", c.status),
+                    cpu_percent=stats["cpu_percent"],
+                    memory_usage_bytes=stats["memory_usage_bytes"],
+                    memory_limit_bytes=stats["memory_limit_bytes"],
+                    memory_percent=stats["memory_percent"],
                 )
             )
         return items
