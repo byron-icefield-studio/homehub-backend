@@ -1,6 +1,6 @@
 # HomeHub Backend
 
-GitHub: https://github.com/byron-icefield-studio/HomeHub-backend
+GitHub: https://github.com/byron-icefield-studio/homehub-backend
 
 HomeHub 后端项目（FastAPI），负责：
 
