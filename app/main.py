@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import io
+import mimetypes
 import re
 import tarfile
 import threading
@@ -10,15 +12,29 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
 import docker
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
-from .config_store import CONFIG_DIR, get_dashboard, get_services, save_dashboard, save_services
+from .config_store import CONFIG_DIR, DATA_ROOT, get_dashboard, get_services, save_dashboard, save_services
 from .schemas import ContainerInfo, ContainerStats, DashboardConfig, ServicesConfig
 from .system_info import collect_system_stats
 
+# 本地图标存储目录 / Local icon storage directory
+ICONS_DIR = DATA_ROOT / "icons"
+
 app = FastAPI(title="HomeHub Service API", version="0.1.0")
+
+
+def _ensure_icons_dir() -> None:
+    """确保图标目录存在 / Ensure icons directory exists"""
+    ICONS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+_ensure_icons_dir()
+# 挂载静态图标文件服务 / Mount static icon file serving
+app.mount("/api/icons/static", StaticFiles(directory=str(ICONS_DIR)), name="icons-static")
 
 _stats_lock = threading.Lock()
 _stats_stop = threading.Event()
@@ -225,6 +241,63 @@ def icon_suggestions(url: str) -> dict:
         raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"icon discovery failed: {exc}") from exc
+
+
+def _save_icon_bytes(data: bytes, mime_type: str) -> str:
+    """将图标字节保存到本地，返回静态访问路径
+    Save icon bytes to local storage, return static access path"""
+    _ensure_icons_dir()
+    # 使用内容哈希作为文件名，避免重复存储 / Use content hash as filename to avoid duplicates
+    content_hash = hashlib.sha256(data).hexdigest()[:16]
+    ext = mimetypes.guess_extension(mime_type.split(";")[0].strip()) or ".ico"
+    # 某些 MIME 映射到奇怪扩展名，做修正 / Fix some odd extension mappings
+    if ext in {".jpe", ".jpeg"}:
+        ext = ".jpg"
+    filename = f"{content_hash}{ext}"
+    dest = ICONS_DIR / filename
+    if not dest.exists():
+        dest.write_bytes(data)
+    return f"/api/icons/static/{filename}"
+
+
+@app.post("/api/icons/fetch")
+def fetch_icon_to_local(payload: dict) -> dict:
+    """下载远程图标 URL 到本地存储，返回本地路径
+    Download a remote icon URL to local storage, return local path"""
+    url = payload.get("url", "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="url is required")
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=400, detail="url must start with http:// or https://")
+
+    try:
+        req = Request(url, headers={"User-Agent": "HomeHub/0.1 (+icon-fetch)"})
+        with urlopen(req, timeout=10) as resp:
+            data = resp.read(512 * 1024)  # 最多读取 512KB / Read up to 512KB
+            content_type = resp.headers.get("Content-Type", "image/x-icon")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"failed to fetch icon: {exc}") from exc
+
+    local_path = _save_icon_bytes(data, content_type)
+    return {"path": local_path}
+
+
+@app.post("/api/icons/upload")
+async def upload_icon(file: UploadFile = File(...)) -> dict:
+    """接收上传的图标文件并保存到本地，返回本地路径
+    Accept uploaded icon file and save to local storage, return local path"""
+    # 限制只接受图片类型 / Only accept image types
+    content_type = file.content_type or "application/octet-stream"
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="only image files are accepted")
+
+    data = await file.read(512 * 1024)  # 最多读取 512KB / Read up to 512KB
+    if not data:
+        raise HTTPException(status_code=400, detail="empty file")
+
+    local_path = _save_icon_bytes(data, content_type)
+    return {"path": local_path}
 
 
 @app.get("/api/config/export")
