@@ -1,0 +1,29 @@
+[project]
+# 项目元数据 / Project metadata
+name = "homehub-backend"
+version = "0.1.0"
+description = "HomeHub 后端服务 / HomeHub backend service"
+requires-python = ">=3.12"
+
+# 运行时依赖（对应原 requirements.txt）
+# Runtime dependencies (migrated from requirements.txt)
+dependencies = [
+    "fastapi==0.116.1",
+    "uvicorn[standard]==0.35.0",
+    "pydantic==2.11.7",
+    "psutil==7.0.0",
+    "docker==7.1.0",
+    "python-multipart==0.0.20",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# 仅打包 app 目录 / Only package the app directory
+packages = ["app"]
+
+[dependency-groups]
+# 开发依赖组（空，留作扩展）/ Dev dependency group (empty, for future use)
+dev = []
